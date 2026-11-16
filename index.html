@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f3a5f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>DTR — Daily Time Record</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#fff; --ink:#1b2430; --muted:#6b7685; --line:#e3e7ed;
+    --brand:#1f3a5f; --in:#1f8a4c; --out:#c2412d; --warn:#b7791f; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  button,input,select{font:inherit}
+  .hidden{display:none!important}
+  header{position:sticky;top:0;z-index:5;background:var(--brand);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 16px 0}
+  .bar{display:flex;align-items:center;gap:10px;padding-bottom:10px}
+  .bar h1{font-size:17px;margin:0;flex:1}
+  .who{font-size:13px;opacity:.85;text-align:right}
+  .who b{display:block;font-size:14px;opacity:1}
+  .ghost{background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+  nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+  nav button{background:none;border:0;color:#fff;opacity:.7;padding:10px 12px;border-bottom:3px solid transparent;white-space:nowrap;cursor:pointer}
+  nav button.active{opacity:1;border-bottom-color:#fff;font-weight:600}
+  main{max-width:960px;margin:0 auto;padding:16px 16px calc(env(safe-area-inset-bottom) + 32px)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+  .card h2{font-size:16px;margin:0 0 12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+  .row>*{flex:1 1 140px}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+  input,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .btn{border:0;border-radius:10px;padding:11px 16px;background:var(--brand);color:#fff;font-weight:600;cursor:pointer}
+  .btn.sm{padding:6px 10px;font-size:13px}
+  .btn.in{background:var(--in)} .btn.out{background:var(--out)} .btn.line{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn:disabled{opacity:.55;cursor:wait}
+  .punch{display:block;width:min(280px,80vw);aspect-ratio:1;margin:18px auto;border-radius:50%;font-size:26px;letter-spacing:.04em;box-shadow:0 10px 30px rgba(0,0,0,.15)}
+  .center{text-align:center}
+  .clock{font-size:42px;font-weight:700;font-variant-numeric:tabular-nums}
+  .muted{color:var(--muted)} .small{font-size:13px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+  .stat .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+  .stat .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .tbl{width:100%;border-collapse:collapse;font-size:14px}
+  .tbl th,.tbl td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+  .tbl th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .tbl td.num,.tbl th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .tbl tfoot td{font-weight:700}
+  .scroll{overflow-x:auto}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#eef1f5;color:var(--muted)}
+  .pill.in{background:#e3f4ea;color:var(--in)} .pill.out{background:#fbe9e6;color:var(--out)} .pill.warn{background:#fdf3e1;color:var(--warn)}
+  .live{color:var(--in);font-weight:700;font-variant-numeric:tabular-nums}
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);background:#1b2430;color:#fff;padding:12px 16px;border-radius:10px;max-width:90vw;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .toast.err{background:var(--out)}
+  .login{max-width:380px;margin:8vh auto}
+  .login .logo{font-size:44px;text-align:center}
+  .empty{padding:20px;text-align:center;color:var(--muted)}
+  .actions{display:flex;gap:6px;justify-content:flex-end}
+  .offline{background:var(--warn);color:#fff;text-align:center;font-size:13px;padding:4px}
+</style>
+</head>
+<body>
+<div id="offline" class="offline hidden">Offline — showing last saved data</div>
+
+<!-- LOGIN -->
+<section id="loginView" class="hidden">
+  <div class="card login">
+    <div class="logo">⏱️</div>
+    <h2 class="center">Daily Time Record</h2>
+    <form id="loginForm" autocomplete="off">
+      <label for="loginUser">Your name</label>
+      <select id="loginUser" required><option value="">Loading…</option></select>
+      <div style="height:12px"></div>
+      <label for="loginPin">Last 4 digits of your WhatsApp number</label>
+      <input id="loginPin" inputmode="numeric" pattern="\d{4}" maxlength="4" required placeholder="••••" type="password">
+      <div style="height:16px"></div>
+      <button class="btn" style="width:100%" id="loginBtn">Log in</button>
+    </form>
+  </div>
+</section>
+
+<!-- APP -->
+<div id="appView" class="hidden">
+  <header>
+    <div class="bar">
+      <h1>⏱️ DTR</h1>
+      <div class="who"><b id="whoName"></b><span id="whoRole"></span></div>
+      <button class="ghost" id="logoutBtn">Log out</button>
+    </div>
+    <nav id="tabs"></nav>
+  </header>
+  <main id="main"></main>
+</div>
+
+<script>
+/* ============================================================================
+ * CONFIG — edit these two values after deploying Code.gs
+ * ========================================================================== */
+const CONFIG = {
+  API_URL: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
+  API_TOKEN: 'PASTE_API_TOKEN_FROM_SCRIPT_PROPERTIES',
+  DASHBOARD_REFRESH_MS: 60000,
+};
+
+/* ============================================================================
+ * STATE & STORAGE
+ * ========================================================================== */
+const LS = {
+  get(k, d = null) { try { const v = localStorage.getItem('dtr.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('dtr.' + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem('dtr.' + k); } catch {} },
+  clearData() { try { Object.keys(localStorage).filter(k => k.startsWith('dtr.cache.')).forEach(k => localStorage.removeItem(k)); } catch {} },
+};
+
+const state = {
+  session: LS.get('session'),
+  user: LS.get('user'),
+  tab: null,
+  timers: [],
+};
+
+const TABS = {
+  clock:     { label: 'Clock',       roles: ['employee', 'timekeeper'], render: renderClock },
+  mydtr:     { label: 'My DTR',      roles: ['employee', 'timekeeper'], render: renderMyDTR },
+  dashboard: { label: 'Live',        roles: ['owner', 'timekeeper'],    render: renderDashboard },
+  reports:   { label: 'Employee DTR',roles: ['owner', 'timekeeper'],    render: renderReports },
+  monthly:   { label: 'Monthly',     roles: ['owner', 'timekeeper'],    render: renderMonthly },
+  logs:      { label: 'Edit Logs',   roles: ['timekeeper'],             render: renderLogs },
+  employees: { label: 'Employees',   roles: ['timekeeper'],             render: renderEmployees },
+};
+
+/* ============================================================================
+ * API
+ * ========================================================================== */
+async function api(action, params = {}, method = 'GET') {
+  const base = { token: CONFIG.API_TOKEN, action };
+  if (state.session) base.session = state.session;
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+  let res;
+  try {
+    if (method === 'GET') {
+      res = await fetch(CONFIG.API_URL + '?' + new URLSearchParams({ ...base, ...clean, _: Date.now() }));
+    } else {
+      res = await fetch(CONFIG.API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ ...base, ...clean }),
+      });
+    }
+  } catch (e) {
+    setOffline(true);
+    throw new Error('No connection. Please check your internet.');
+  }
+  setOffline(false);
+  let json;
+  try { json = await res.json(); } catch { throw new Error('Unexpected server response.'); }
+  if (!json.ok) {
+    if (['AUTH_REQUIRED', 'SESSION_EXPIRED'].includes(json.code) && action !== 'login') {
+      endSession();
+      toast(json.error, true);
+    }
+    const err = new Error(json.error || 'Request failed.');
+    err.code = json.code;
+    throw err;
+  }
+  return json.data;
+}
+
+/** Render from cache instantly, then refresh from network. */
+async function cachedLoad(key, fetcher, render) {
+  const cached = LS.get('cache.' + key);
+  if (cached) render(cached, true);
+  try {
+    const fresh = await fetcher();
+    LS.set('cache.' + key, fresh);
+    render(fresh, false);
+    return fresh;
+  } catch (e) {
+    if (e.code !== 'AUTH_REQUIRED' && e.code !== 'SESSION_EXPIRED') toast(e.message, true);
+    if (!cached) render(null, false);
+  }
+}
+
+/* ============================================================================
+ * UTIL
+ * ========================================================================== */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+const fmtDateTime = iso => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+const fmtDay = key => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); };
+function fmtDur(ms, secs = false) {
+  ms = Math.max(0, ms || 0);
+  const h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000), s = Math.floor(ms % 60000 / 1000);
+  return secs ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${h}h ${String(m).padStart(2, '0')}m`;
+}
+const hrs = ms => (Math.max(0, ms || 0) / 3600000).toFixed(2);
+const toLocalInput = iso => { const d = new Date(iso); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+const fromLocalInput = v => new Date(v).toISOString();
+const todayKey = () => toLocalInput(new Date().toISOString()).slice(0, 10);
+const monthsAgoKey = n => { const d = new Date(); d.setDate(d.getDate() - n); return toLocalInput(d.toISOString()).slice(0, 10); };
+
+function toast(msg, err = false) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), err ? 5000 : 2800);
+}
+function setOffline(on) { $('#offline').classList.toggle('hidden', !on); }
+function every(ms, fn) { const id = setInterval(fn, ms); state.timers.push(id); return id; }
+function clearTimers() { state.timers.forEach(clearInterval); state.timers = []; }
+async function busy(btn, fn) {
+  if (btn) { btn.disabled = true; }
+  try { return await fn(); } finally { if (btn) btn.disabled = false; }
+}
+
+const STATUS_PILL = {
+  COMPLETE: '<span class="pill">Complete</span>',
+  OPEN: '<span class="pill in">On shift</span>',
+  MISSING_OUT: '<span class="pill warn">No time out</span>',
+  MISSING_IN: '<span class="pill warn">No time in</span>',
+};
+
+function periodPicker(id, defaults = {}) {
+  const now = new Date();
+  const y = defaults.year || now.getFullYear();
+  const m = defaults.month || now.getMonth() + 1;
+  const c = defaults.cutoff || (now.getDate() <= 15 ? '1' : '2');
+  return `
+    <div><label>Month</label><input type="month" id="${id}Month" value="${y}-${String(m).padStart(2, '0')}"></div>
+    <div><label>Cutoff</label><select id="${id}Cutoff">
+      <option value="1" ${c === '1' ? 'selected' : ''}>1st (1–15)</option>
+      <option value="2" ${c === '2' ? 'selected' : ''}>2nd (16–end)</option>
+      <option value="full" ${c === 'full' ? 'selected' : ''}>Whole month</option>
+    </select></div>`;
+}
+function readPeriod(id) {
+  const [year, month] = $('#' + id + 'Month').value.split('-').map(Number);
+  return { year, month, cutoff: $('#' + id + 'Cutoff').value };
+}
+
+async function employeeOptions(selected) {
+  let roster = LS.get('cache.roster');
+  if (!roster) {
+    const d = await api('getOwnerDashboard');
+    roster = d.roster; LS.set('cache.roster', roster);
+  }
+  return roster.map(e => `<option value="${esc(e.id)}" ${e.id === selected ? 'selected' : ''}>${esc(e.name)}${e.status !== 'active' ? ' (inactive)' : ''}</option>`).join('');
+}
+
+/* ============================================================================
+ * AUTH
+ * ========================================================================== */
+async function showLogin() {
+  clearTimers();
+  $('#appView').classList.add('hidden');
+  $('#loginView').classList.remove('hidden');
+  const sel = $('#loginUser');
+  const fill = list => {
+    const prev = sel.value || LS.get('lastUserId') || '';
+    sel.innerHTML = '<option value="">— Select your name —</option>' +
+      list.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+    sel.value = list.some(e => e.id === prev) ? prev : '';
+  };
+  const cached = LS.get('employees');
+  if (cached) fill(cached);
+  try {
+    const list = await api('listEmployees');
+    LS.set('employees', list); fill(list);
+  } catch (e) { if (!cached) sel.innerHTML = '<option value="">Unable to load — check connection</option>'; toast(e.message, true); }
+}
+
+$('#loginForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const userId = $('#loginUser').value, pin = $('#loginPin').value.trim();
+  if (!userId || !/^\d{4}$/.test(pin)) return toast('Select your name and enter 4 digits.', true);
+  await busy($('#loginBtn'), async () => {
+    try {
+      const d = await api('login', { userId, pin }, 'POST');
+      state.session = d.session; state.user = d.user;
+      LS.set('session', d.session); LS.set('user', d.user); LS.set('lastUserId', userId);
+      $('#loginPin').value = '';
+      startApp();
+    } catch (e) { toast(e.message, true); }
+  });
+});
+
+$('#logoutBtn').addEventListener('click', async () => {
+  try { await api('logout', {}, 'POST'); } catch {}
+  endSession();
+});
+
+function endSession() {
+  state.session = null; state.user = null;
+  LS.del('session'); LS.del('user'); LS.clearData();
+  showLogin();
+}
+
+/* ============================================================================
+ * SHELL
+ * ========================================================================== */
+function startApp() {
+  $('#loginView').classList.add('hidden');
+  $('#appView').classList.remove('hidden');
+  $('#whoName').textContent = state.user.name;
+  $('#whoRole').textContent = state.user.role;
+  const allowed = Object.entries(TABS).filter(([, t]) => t.roles.includes(state.user.role));
+  $('#tabs').innerHTML = allowed.map(([k, t]) => `<button data-tab="${k}">${t.label}</button>`).join('');
+  $('#tabs').onclick = e => { const b = e.target.closest('button[data-tab]'); if (b) go(b.dataset.tab); };
+  const saved = LS.get('tab');
+  go(allowed.some(([k]) => k === saved) ? saved : allowed[0][0]);
+}
+
+function go(tab) {
+  clearTimers();
+  state.tab = tab; LS.set('tab', tab);
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  $('#main').innerHTML = '';
+  TABS[tab].render($('#main'));
+}
+
+/* ============================================================================
+ * VIEW: CLOCK (employee / timekeeper)
+ * ========================================================================== */
+function renderClock(root) {
+  root.innerHTML = `
+    <div class="card center">
+      <div class="muted" id="clkDate"></div>
+      <div class="clock" id="clkNow">--:--:--</div>
+      <button class="btn punch" id="punchBtn" disabled>…</button>
+      <div id="clkStatus" class="muted">Loading status…</div>
+      <div id="clkWarn" class="small" style="color:var(--warn);margin-top:6px"></div>
+    </div>`;
+  let status = null;
+  const tick = () => {
+    const n = new Date();
+    $('#clkNow').textContent = n.toLocaleTimeString();
+    $('#clkDate').textContent = n.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    if (status && status.isClockedIn) {
+      $('#clkStatus').innerHTML = `Clocked in at <b>${fmtTime(status.clockedInSince)}</b> · <span class="live">${fmtDur(Date.now() - new Date(status.clockedInSince), true)}</span>`;
+    }
+  };
+  const paint = s => {
+    if (!s) return;
+    status = s;
+    const btn = $('#punchBtn');
+    btn.disabled = false;
+    btn.textContent = s.nextAction;
+    btn.className = 'btn punch ' + (s.nextAction === 'TIME IN' ? 'in' : 'out');
+    if (!s.isClockedIn) {
+      $('#clkStatus').innerHTML = s.lastLog
+        ? `Last: ${esc(s.lastLog.action)} · ${fmtDateTime(s.lastLog.timestamp)}`
+        : 'No records yet.';
+    }
+    $('#clkWarn').textContent = s.staleOpen ? 'Your last TIME IN has no TIME OUT. Please inform the timekeeper.' : '';
+    tick();
+  };
+  tick(); every(1000, tick);
+  cachedLoad('status', () => api('getStatus'), paint);
+
+  $('#punchBtn').addEventListener('click', ev => busy(ev.currentTarget, async () => {
+    try {
+      const s = await api('punch', {}, 'POST');
+      LS.set('cache.status', s);
+      paint(s);
+      if (navigator.vibrate) navigator.vibrate(80);
+      toast(`${s.punched.action} recorded at ${fmtTime(s.punched.timestamp)}`);
+      if (s.warning) toast(s.warning, true);
+    } catch (e) { toast(e.message, true); }
+  }));
+}
+
+/* ============================================================================
+ * VIEW: DTR TABLE (shared)
+ * ========================================================================== */
+function dtrTable(d) {
+  if (!d) return '<div class="empty">Could not load records.</div>';
+  const rows = d.shifts.map(s => `
+    <tr>
+      <td>${fmtDay(s.date)}${s.overnight ? ' <span class="pill">overnight</span>' : ''}</td>
+      <td>${fmtTime(s.timeIn)}</td>
+      <td>${s.status === 'OPEN' ? '<span class="live">on shift</span>' : fmtTime(s.timeOut)}</td>
+      <td class="num">${s.status === 'COMPLETE' ? fmtDur(s.durationMs) : s.status === 'OPEN' ? `<span class="live" data-since="${esc(s.timeIn)}">${fmtDur(s.durationMs)}</span>` : '—'}</td>
+      <td>${STATUS_PILL[s.status] || ''}</td>
+    </tr>`).join('');
+  const t = d.totals;
+  return `
+    <div class="stats">
+      <div class="stat"><div class="k">Total hours</div><div class="v">${hrs(t.completedMs)}</div></div>
+      <div class="stat"><div class="k">Days worked</div><div class="v">${t.daysWorked}</div></div>
+      <div class="stat"><div class="k">Shifts</div><div class="v">${t.shiftCount}</div></div>
+      <div class="stat"><div class="k">Issues</div><div class="v" style="color:${t.issues ? 'var(--warn)' : 'inherit'}">${t.issues}</div></div>
+    </div>
+    <div class="card scroll">
+      <h2>${esc(d.employee.name)} · ${fmtDay(d.range.from)} – ${fmtDay(d.range.to)}</h2>
+      ${d.shifts.length ? `
+      <table class="tbl">
+        <thead><tr><th>Date</th><th>Time in</th><th>Time out</th><th class="num">Duration</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="3">Total (completed shifts)</td><td class="num">${fmtDur(t.completedMs)}</td><td></td></tr></tfoot>
+      </table>` : '<div class="empty">No records in this period.</div>'}
+    </div>`;
+}
+
+function liveTicker(root) {
+  every(1000, () => root.querySelectorAll('[data-since]').forEach(el => {
+    el.textContent = fmtDur(Date.now() - new Date(el.dataset.since), el.dataset.secs === '1');
+  }));
+}
+
+/* ============================================================================
+ * VIEW: MY DTR
+ * ========================================================================== */
+function renderMyDTR(root) {
+  root.innerHTML = `
+    <div class="card"><div class="row">${periodPicker('my')}</div></div>
+    <div id="myOut"><div class="empty">Loading…</div></div>`;
+  const load = () => {
+    const p = readPeriod('my');
+    cachedLoad(`mydtr.${p.year}.${p.month}.${p.cutoff}`, () => api('getPersonalDTR', p), d => { $('#myOut').innerHTML = dtrTable(d); });
+  };
+  root.querySelectorAll('input,select').forEach(el => el.addEventListener('change', load));
+  liveTicker(root);
+  load();
+}
+
+/* ============================================================================
+ * VIEW: LIVE DASHBOARD (owner / timekeeper)
+ * ========================================================================== */
+function renderDashboard(root) {
+  const isTK = state.user.role === 'timekeeper';
+  root.innerHTML = '<div id="dash"><div class="empty">Loading…</div></div>';
+  let data = null;
+  const paint = d => {
+    if (!d) { $('#dash').innerHTML = '<div class="empty">Could not load dashboard.</div>'; return; }
+    data = d;
+    LS.set('cache.roster', d.roster);
+    const activeRows = d.active.map(a => `
+      <tr>
+        <td><b>${esc(a.name)}</b></td>
+        <td>${fmtTime(a.clockIn)}</td>
+        <td class="num"><span class="live" data-since="${esc(a.clockIn)}" data-secs="1">${fmtDur(a.elapsedMs, true)}</span></td>
+        ${isTK ? `<td class="actions"><button class="btn sm out" data-punch="${esc(a.employeeId)}">Clock out</button></td>` : ''}
+      </tr>`).join('');
+    const rosterRows = d.roster.filter(e => e.status === 'active').map(e => `
+      <tr>
+        <td>${esc(e.name)}</td>
+        <td>${e.isClockedIn ? '<span class="pill in">On shift</span>' : e.staleOpen ? '<span class="pill warn">Missed out</span>' : '<span class="pill">Off</span>'}</td>
+        <td class="small muted">${e.lastLog ? esc(e.lastLog.action) + ' · ' + fmtDateTime(e.lastLog.timestamp) : '—'}</td>
+        <td class="num">${fmtDur(e.completedTodayMs)}</td>
+        ${isTK ? `<td class="actions"><button class="btn sm ${e.isClockedIn ? 'out' : 'in'}" data-punch="${esc(e.id)}">${e.isClockedIn ? 'Clock out' : 'Clock in'}</button></td>` : ''}
+      </tr>`).join('');
+    $('#dash').innerHTML = `
+      <div class="stats">
+        <div class="stat"><div class="k">On shift now</div><div class="v">${d.active.length}</div></div>
+        <div class="stat"><div class="k">Team hours today</div><div class="v" id="teamTotal">${fmtDur(d.teamTotalTodayMs)}</div></div>
+        <div class="stat"><div class="k">Today</div><div class="v" style="font-size:18px">${fmtDay(d.today)}</div></div>
+      </div>
+      <div class="card scroll">
+        <h2>Currently clocked in</h2>
+        ${d.active.length ? `<table class="tbl"><thead><tr><th>Employee</th><th>Clock in</th><th class="num">Elapsed</th>${isTK ? '<th></th>' : ''}</tr></thead><tbody>${activeRows}</tbody></table>`
+          : '<div class="empty">Nobody is clocked in.</div>'}
+      </div>
+      <div class="card scroll">
+        <h2>Team today</h2>
+        <table class="tbl"><thead><tr><th>Employee</th><th>Status</th><th>Last punch</th><th class="num">Completed today</th>${isTK ? '<th></th>' : ''}</tr></thead><tbody>${rosterRows}</tbody></table>
+      </div>
+      <p class="small muted center">Auto-refreshes every minute · updated ${fmtTime(d.serverTime)}</p>`;
+  };
+  const load = () => cachedLoad('dashboard', () => api('getOwnerDashboard'), paint);
+  liveTicker(root);
+  every(1000, () => {
+    if (!data || !$('#teamTotal')) return;
+    const now = Date.now();
+    const open = data.active.reduce((s, a) => s + Math.max(0, now - new Date(a.countFrom)), 0);
+    $('#teamTotal').textContent = fmtDur(data.teamCompletedTodayMs + open);
+  });
+  every(CONFIG.DASHBOARD_REFRESH_MS, () => { if (!document.hidden) load(); });
+  root.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-punch]');
+    if (!b) return;
+    busy(b, async () => {
+      try {
+        const r = await api('adminCrudLog', { op: 'punch', employeeId: b.dataset.punch }, 'POST');
+        toast(`${r.employee.name}: ${r.punched.action} at ${fmtTime(r.punched.timestamp)}`);
+        load();
+      } catch (e) { toast(e.message, true); }
+    });
+  });
+  load();
+}
+
+/* ============================================================================
+ * VIEW: PER-EMPLOYEE DTR (owner / timekeeper)
+ * ========================================================================== */
+async function renderReports(root) {
+  root.innerHTML = `
+    <div class="card"><div class="row">
+      <div><label>Employee</label><select id="repEmp"><option>Loading…</option></select></div>
+      ${periodPicker('rep', { cutoff: 'full' })}
+    </div></div>
+    <div id="repOut"></div>`;
+  try { $('#repEmp').innerHTML = '<option value="">— Select —</option>' + await employeeOptions(LS.get('repEmp')); }
+  catch (e) { toast(e.message, true); }
+  const load = () => {
+    const userId = $('#repEmp').value;
+    LS.set('repEmp', userId);
+    if (!userId) { $('#repOut').innerHTML = '<div class="empty">Select an employee.</div>'; return; }
+    const p = readPeriod('rep');
+    $('#repOut').innerHTML = '<div class="empty">Loading…</div>';
+    cachedLoad(`rep.${userId}.${p.year}.${p.month}.${p.cutoff}`, () => api('getPersonalDTR', { ...p, userId }), d => { $('#repOut').innerHTML = dtrTable(d); });
+  };
+  root.querySelectorAll('input,select').forEach(el => el.addEventListener('change', load));
+  liveTicker(root);
+  load();
+}
+
+/* ============================================================================
+ * VIEW: MONTHLY SUMMARY (owner / timekeeper)
+ * ========================================================================== */
+function renderMonthly(root) {
+  const n = new Date();
+  root.innerHTML = `
+    <div class="card"><div class="row">
+      <div><label>Month</label><input type="month" id="monMonth" value="${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}"></div>
+      <div style="flex:0 0 auto"><button class="btn line" id="monCsv">Export CSV</button></div>
+    </div></div>
+    <div id="monOut"><div class="empty">Loading…</div></div>`;
+  let last = null;
+  const paint = d => {
+    if (!d) { $('#monOut').innerHTML = '<div class="empty">Could not load summary.</div>'; return; }
+    last = d;
+    const rows = d.rows.map(r => `
+      <tr>
+        <td>${esc(r.name)}${r.status !== 'active' ? ' <span class="pill">inactive</span>' : ''}</td>
+        <td class="num">${hrs(r.cutoff1Ms)}</td>
+        <td class="num">${hrs(r.cutoff2Ms)}</td>
+        <td class="num"><b>${hrs(r.totalMs)}</b></td>
+        <td class="num">${r.daysWorked}</td>
+        <td class="num">${r.issues ? `<span class="pill warn">${r.issues}</span>` : '0'}</td>
+      </tr>`).join('');
+    const sum = k => hrs(d.rows.reduce((s, r) => s + r[k], 0));
+    $('#monOut').innerHTML = `
+      <div class="card scroll">
+        <h2>${new Date(d.year, d.month - 1, 1).toLocaleDateString([], { month: 'long', year: 'numeric' })} · hours</h2>
+        ${d.rows.length ? `<table class="tbl">
+          <thead><tr><th>Employee</th><th class="num">1st cutoff</th><th class="num">2nd cutoff</th><th class="num">Total</th><th class="num">Days</th><th class="num">Issues</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr><td>Team total</td><td class="num">${sum('cutoff1Ms')}</td><td class="num">${sum('cutoff2Ms')}</td><td class="num">${hrs(d.grandTotalMs)}</td><td></td><td></td></tr></tfoot>
+        </table>` : '<div class="empty">No employees.</div>'}
+        <p class="small muted">Totals include completed shifts only. "Issues" are missing time-in/time-out punches to fix in Edit Logs.</p>
+      </div>`;
+  };
+  const load = () => {
+    const [year, month] = $('#monMonth').value.split('-').map(Number);
+    cachedLoad(`mon.${year}.${month}`, () => api('getMonthlySummary', { year, month }), paint);
+  };
+  $('#monMonth').addEventListener('change', load);
+  $('#monCsv').addEventListener('click', () => {
+    if (!last) return;
+    const lines = [['Employee ID', 'Name', '1st cutoff hrs', '2nd cutoff hrs', 'Total hrs', 'Days', 'Shifts', 'Issues']]
+      .concat(last.rows.map(r => [r.employeeId, r.name, hrs(r.cutoff1Ms), hrs(r.cutoff2Ms), hrs(r.totalMs), r.daysWorked, r.shiftCount, r.issues]));
+    const csv = lines.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `dtr-summary-${last.year}-${String(last.month).padStart(2, '0')}.csv`;
+    a.click();
+  });
+  load();
+}
+
+/* ============================================================================
+ * VIEW: EDIT LOGS (timekeeper)
+ * ========================================================================== */
+async function renderLogs(root) {
+  root.innerHTML = `
+    <div class="card">
+      <h2>Add missed punch</h2>
+      <form id="addLog" class="row">
+        <div><label>Employee</label><select id="alEmp" required></select></div>
+        <div><label>Action</label><select id="alAct"><option>TIME IN</option><option>TIME OUT</option></select></div>
+        <div><label>Date & time</label><input type="datetime-local" id="alTs" required></div>
+        <div style="flex:0 0 auto"><button class="btn">Add</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Find logs</h2>
+      <div class="row">
+        <div><label>Employee</label><select id="flEmp"></select></div>
+        <div><label>From</label><input type="date" id="flFrom" value="${monthsAgoKey(14)}"></div>
+        <div><label>To</label><input type="date" id="flTo" value="${todayKey()}"></div>
+      </div>
+    </div>
+    <div id="logOut"></div>`;
+  $('#alTs').value = toLocalInput(new Date().toISOString());
+  try {
+    const opts = await employeeOptions();
+    $('#alEmp').innerHTML = '<option value="">— Select —</option>' + opts;
+    $('#flEmp').innerHTML = '<option value="">All employees</option>' + opts;
+  } catch (e) { toast(e.message, true); }
+
+  const load = async () => {
+    $('#logOut').innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const d = await api('adminCrudLog', { op: 'list', employeeId: $('#flEmp').value, from: $('#flFrom').value, to: $('#flTo').value }, 'POST');
+      $('#logOut').innerHTML = `
+        <div class="card scroll">
+          <h2>${d.logs.length} log(s)</h2>
+          ${d.logs.length ? `<table class="tbl">
+            <thead><tr><th>Employee</th><th>Timestamp</th><th>Action</th><th>By</th><th></th></tr></thead>
+            <tbody>${d.logs.map(l => `
+              <tr data-id="${esc(l.logId)}">
+                <td>${esc(l.name)}</td>
+                <td><input type="datetime-local" class="ts" value="${toLocalInput(l.timestamp)}" style="min-width:190px"></td>
+                <td><select class="act"><option ${l.action === 'TIME IN' ? 'selected' : ''}>TIME IN</option><option ${l.action === 'TIME OUT' ? 'selected' : ''}>TIME OUT</option></select></td>
+                <td><span class="pill">${esc(l.loggedBy)}</span></td>
+                <td class="actions">
+                  <button class="btn sm" data-op="update">Save</button>
+                  <button class="btn sm out" data-op="delete">Delete</button>
+                </td>
+              </tr>`).join('')}</tbody></table>` : '<div class="empty">No logs in this range.</div>'}
+        </div>`;
+    } catch (e) { $('#logOut').innerHTML = ''; toast(e.message, true); }
+  };
+
+  $('#addLog').addEventListener('submit', ev => {
+    ev.preventDefault();
+    busy(ev.submitter, async () => {
+      try {
+        await api('adminCrudLog', { op: 'create', employeeId: $('#alEmp').value, action: $('#alAct').value, timestamp: fromLocalInput($('#alTs').value) }, 'POST');
+        toast('Log added.'); LS.clearData(); load();
+      } catch (e) { toast(e.message, true); }
+    });
+  });
+  ['#flEmp', '#flFrom', '#flTo'].forEach(s => $(s).addEventListener('change', load));
+  $('#logOut').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-op]');
+    if (!b) return;
+    const tr = b.closest('tr'), logId = tr.dataset.id;
+    if (b.dataset.op === 'delete' && !confirm('Delete this log permanently?')) return;
+    busy(b, async () => {
+      try {
+        if (b.dataset.op === 'update') {
+          await api('adminCrudLog', { op: 'update', logId, timestamp: fromLocalInput($('.ts', tr).value), action: $('.act', tr).value }, 'POST');
+          toast('Log updated.');
+        } else {
+          await api('adminCrudLog', { op: 'delete', logId }, 'POST');
+          toast('Log deleted.');
+        }
+        LS.clearData(); load();
+      } catch (e) { toast(e.message, true); }
+    });
+  });
+  load();
+}
+
+/* ============================================================================
+ * VIEW: EMPLOYEES (timekeeper)
+ * ========================================================================== */
+function renderEmployees(root) {
+  root.innerHTML = `
+    <div class="card">
+      <h2>Add employee</h2>
+      <form id="addEmp" class="row" autocomplete="off">
+        <div style="flex:2 1 200px"><label>Full name</label><input id="aeName" required maxlength="80"></div>
+        <div><label>WhatsApp last 4</label><input id="aePin" inputmode="numeric" pattern="\\d{4}" maxlength="4" required></div>
+        <div><label>Role</label><select id="aeRole"><option value="employee">Employee</option><option value="owner">Owner</option><option value="timekeeper">Time keeper</option></select></div>
+        <div style="flex:0 0 auto"><button class="btn">Add</button></div>
+      </form>
+    </div>
+    <div id="empOut"><div class="empty">Loading…</div></div>`;
+  const paint = d => {
+    if (!d) { $('#empOut').innerHTML = '<div class="empty">Could not load employees.</div>'; return; }
+    LS.set('cache.roster', d.roster);
+    $('#empOut').innerHTML = `
+      <div class="card scroll"><h2>${d.roster.length} employee(s)</h2>
+        <table class="tbl"><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Status</th></tr></thead>
+        <tbody>${d.roster.map(e => `<tr><td class="small muted">${esc(e.id)}</td><td>${esc(e.name)}</td><td>${esc(e.role)}</td><td><span class="pill ${e.status === 'active' ? 'in' : ''}">${esc(e.status)}</span></td></tr>`).join('')}</tbody></table>
+        <p class="small muted">To deactivate an employee or change a role/PIN, edit the Employees sheet (Status → inactive).</p>
+      </div>`;
+  };
+  const load = () => cachedLoad('dashboard', () => api('getOwnerDashboard'), paint);
+  $('#addEmp').addEventListener('submit', ev => {
+    ev.preventDefault();
+    const pin = $('#aePin').value.trim();
+    if (!/^\d{4}$/.test(pin)) return toast('WhatsApp last 4 must be exactly 4 digits.', true);
+    busy(ev.submitter, async () => {
+      try {
+        const r = await api('adminAddEmployee', { fullName: $('#aeName').value, whatsAppLast4: pin, role: $('#aeRole').value }, 'POST');
+        toast(`Added ${r.employee.name} (${r.employee.id})`);
+        ev.target.reset(); LS.del('employees'); load();
+      } catch (e) { toast(e.message, true); }
+    });
+  });
+  load();
+}
+
+/* ============================================================================
+ * BOOT
+ * ========================================================================== */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+window.addEventListener('online', () => setOffline(false));
+window.addEventListener('offline', () => setOffline(true));
+document.addEventListener('visibilitychange', () => {
+  // Refresh live views when returning to the app (forms on other tabs are left untouched).
+  if (!document.hidden && state.session && ['clock', 'dashboard'].includes(state.tab)) go(state.tab);
+});
+
+if (state.session && state.user) startApp(); else showLogin();
+</script>
+</body>
+</html>
